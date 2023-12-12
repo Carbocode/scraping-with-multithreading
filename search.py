@@ -4,13 +4,24 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
-# Insieme globale per tracciare gli ID unici
-processed_vets = set()
-lock = threading.Lock()
+categoria = "Veterinario" # categoria ricercata
+processed_results = set() # insieme globale per tracciare gli ID unici
+lock = threading.Lock() # permette di fermare tutti i thread per non avere concorrenza durante l'accesso ad una risorsa
+
 
 def fetchJson(city, i):
-    api_base_url = "https://www.paginegialle.it/ricerca/Veterinario"
-    api_url = f"{api_base_url}/{city}/p-{i}?output=json"
+    """
+    Aggiunge un nuovo animale all'ambulatorio.
+
+    Args:
+        name (str): Il nome dell'animale.
+        species (str): La specie dell'animale.
+
+    Returns:
+        dict: Dictionary contenente il risultato della chiamata
+    """
+    api_base_url = "https://www.paginegialle.it/ricerca"
+    api_url = f"{api_base_url}/{categoria}/{city}/p-{i}?output=json"
 
     try:
         response = requests.get(api_url, {"Accept": "application/json"})
@@ -22,6 +33,16 @@ def fetchJson(city, i):
         return None
 
 def getData(item):
+    """
+    Prende il singolo risultato ottenuto dalla chiamata e li formatta prelevando solo i dati utili
+
+    Args:
+        item (dict): Dictionary contenente tutti i dati di un singolo risultato
+
+    Returns:
+        dict: Restituisce tutti i dati salienti formattati
+    """
+
     result = {
         "ID": item.get('cd_id_sede', None),
         "Nome": item.get('ds_ragsoc', None),
@@ -55,16 +76,35 @@ def getData(item):
     
     return result
 
-def isDuplicate(vet_id):
-     with lock:  # Assicura l'accesso thread-safe all'insieme
-        if vet_id not in processed_vets:
-            processed_vets.add(vet_id)
+def isDuplicate(result_id):
+    """ 
+    Controlla se l'ID è duplicato
+
+    Args:
+        item (str): ID del risultato che si vuole controllare
+
+    Returns:
+        bool: se è duplicato o no
+    """
+
+    with lock:  # Assicura l'accesso thread-safe all'insieme
+        if result_id not in processed_results:
+            processed_results.add(result_id)
             return True
         else:
             return False
 
-def scrapeVets(city):
-    vets = []
+def scrapeData(city):
+    """
+    Thread che si occupa di recuperare i dati richiesti in una città
+
+    Args:
+        city (str): Città
+
+    Returns:
+        void
+    """
+    results = []
 
     i = 0
     while (response_data := fetchJson(city, i)) is not None:
@@ -72,25 +112,23 @@ def scrapeVets(city):
         # Verifico la presenza di risposte
         if 'list' in response_data and 'out' in response_data['list'] and 'base' in response_data['list']['out']  and 'results' in response_data['list']['out']['base']:
             for item in response_data['list']['out']['base']['results']:
-                vet = getData(item)
-                if not isDuplicate(vet['ID']):
-                    vets.append(vet)
+                result = getData(item)
+                if not isDuplicate(result['ID']):
+                    results.append(result)
 
     with open(f'results/{city}.json', 'w') as file_output:
 
-        json.dump(vets, file_output)
+        json.dump(results, file_output)
     
-
 # Carica il file JSON
 with open('cities.json', 'r') as file_input:
     data = json.load(file_input)
 
-# Assumi che il tuo file JSON abbia un campo 'cities' che è un array di nomi di città
 cities = data['cities']
 
 # Itera su ogni città nell'array
 with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(scrapeVets, city): city for city in cities}
+        futures = {executor.submit(scrapeData, city): city for city in cities}
 
         for future in as_completed(futures):
             city = futures[future]
