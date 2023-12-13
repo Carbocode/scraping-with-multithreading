@@ -4,8 +4,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
-categoria = "Veterinario" # categoria ricercata
-processed_results = set() # insieme globale per tracciare gli ID unici
+categoria = "Veterinaria%20-%20ambulatori%20e%20laboratori" # categoria ricercata
+processed_results = set() # Collection globale per tracciare tutti gli ID trovati
 lock = threading.Lock() # permette di fermare tutti i thread per non avere concorrenza durante l'accesso ad una risorsa
 
 
@@ -30,6 +30,12 @@ def fetchJson(city, i):
     except requests.RequestException as e:
         error_code = e.response.status_code if e.response else 'Nessuna risposta'
         print(f"Errore durante la richiesta a {city}, ricerca terminata a pagina {i}: {error_code}")
+        return None
+
+def splitShifts(shifts):
+    if shifts is not None:
+        return [(shift.split(" - ")[0], shift.split(" - ")[1]) for shift in shifts if " - " in shift]
+    else:
         return None
 
 def getData(item):
@@ -59,20 +65,22 @@ def getData(item):
 
     if item.get('time', None) is not None:
         result['Orari'] = {
-            "0": item['time'].get('2', None),
-            "1": item['time'].get('3', None),
-            "2": item['time'].get('4', None),
-            "3": item['time'].get('5', None),
-            "4": item['time'].get('6', None),
-            "5": item['time'].get('7', None),
-            "6": item['time'].get('1', None), # la settimana loro parte dalla Domenica
+            "0": splitShifts(item['time'].get('2', None)),
+            "1": splitShifts(item['time'].get('3', None)),
+            "2": splitShifts(item['time'].get('4', None)),
+            "3": splitShifts(item['time'].get('5', None)),
+            "4": splitShifts(item['time'].get('6', None)),
+            "5": splitShifts(item['time'].get('7', None)),
+            "6": splitShifts(item['time'].get('1', None)), # la settimana del sito parte dalla Domenica
         }
 
-    if item.get('ds_ls_telefoni', None) is not None:
-        result['Telefono'] = item['ds_ls_telefoni'][0]
+    telefoni = item.get('ds_ls_telefoni')
+    if telefoni and len(telefoni) > 0:
+        result['Telefono'] = telefoni[0]
 
-    if item.get('ds_ls_telefoni_whatsapp', None) is not None:
-        result['Telefono'] = item['ds_ls_telefoni_whatsapp'][0]
+    telefoni_whatsapp = item.get('ds_ls_telefoni_whatsapp')
+    if telefoni_whatsapp and len(telefoni_whatsapp) > 0:
+        result['Telefono'] = telefoni_whatsapp[0]
     
     return result
 
